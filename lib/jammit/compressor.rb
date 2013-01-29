@@ -111,13 +111,28 @@ module Jammit
       namespace   = Jammit.template_namespace
       paths       = paths.grep(Jammit.template_extension_matcher).sort
       base_path   = find_base_path(paths)
+      if Jammit.template_compiler
+        require 'execjs'
+        source = Jammit.template_compiler['source']
+        header = Jammit.template_compiler['header']
+        function = Jammit.template_compiler['function']
+        js_context = ExecJS.compile(read_binary_file(source))
+        compiler = header ? js_context.eval(header) : ''
+      else
+        compiler = Jammit.include_jst_script ? read_binary_file(DEFAULT_JST_SCRIPT) : '';
+        js_context = nil
+      end
       compiled    = paths.map do |path|
         contents  = read_binary_file(path)
-        contents  = contents.gsub(/\r?\n/, "\\n").gsub("'", '\\\\\'')
+        result = if js_context
+          js_context.call(function, contents)
+        else
+          contents = contents.gsub(/\r?\n/, "\\n").gsub("'", '\\\\\'')
+          "#{Jammit.template_function}('#{contents}')"
+        end
         name      = template_name(path, base_path)
-        "#{namespace}['#{name}'] = #{Jammit.template_function}('#{contents}');"
+        "#{namespace}['#{name}'] = #{result};"
       end
-      compiler = Jammit.include_jst_script ? read_binary_file(DEFAULT_JST_SCRIPT) : '';
       setup_namespace = "#{namespace} = #{namespace} || {};"
       [JST_START, setup_namespace, compiler, compiled, JST_END].flatten.join("\n")
     end
